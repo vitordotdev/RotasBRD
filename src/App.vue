@@ -159,7 +159,7 @@ function handleExport() {
 function handleGoTo(local) {
   const query = encodeURIComponent(local.endereco);
   const url = `https://www.google.com/maps/search/?api=1&query=${query}`;
-  window.open(url, "_blank");
+  window.location.href = url;
 }
 
 function startAdd() {
