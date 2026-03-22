@@ -1,9 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
-// Importar a instância do Firestore
-import { db } from "./firebase.js"; // Assumindo que seu arquivo firebase.js está em src/firebase.js
+import { db } from "./firebase.js";
 
-// Importar as funções necessárias do Firestore SDK
 import {
   collection,
   getDocs,
@@ -11,18 +9,13 @@ import {
   updateDoc,
   deleteDoc,
   doc,
-  setDoc, // Adicionado para a função de importação
+  setDoc,
 } from "firebase/firestore";
-
-// Removido: import { loadDatabase, saveDatabase } from "./services/db";
 
 const search = ref("");
 const fileInput = ref(null);
-
-// O array 'locais' agora conterá os dados do Firestore
 const locais = ref([]);
 
-// hasDatabase agora é computado a partir do array 'locais'
 const hasDatabase = computed(() => locais.value.length > 0);
 
 const formMode = ref(null); // null | "add" | "edit"
@@ -34,10 +27,6 @@ const form = ref({
   referencia: "",
 });
 
-// Removido: createEmptyDatabase() - Firestore não precisa disso diretamente
-// Removido: validateDatabase() - Firestore lida com a estrutura de documentos
-// Removido: touchDatabase() - Metadados de updated/createdAt serão tratados diretamente nas operações
-
 const filteredLocais = computed(() => {
   if (!locais.value || !Array.isArray(locais.value)) return [];
 
@@ -47,20 +36,19 @@ const filteredLocais = computed(() => {
 
   return locais.value.filter((local) => {
     return (
-      local.nome.toLowerCase().includes(term) || // Use includes para busca mais abrangente
+      local.nome.toLowerCase().includes(term) ||
       local.endereco.toLowerCase().includes(term) ||
       local.referencia.toLowerCase().includes(term)
     );
   });
 });
 
-// Função para carregar os locais do Firestore
 async function loadLocaisFromFirestore() {
   try {
     const locaisCollection = collection(db, "locais");
     const localSnapshot = await getDocs(locaisCollection);
     const locaisList = localSnapshot.docs.map((doc) => ({
-      id: doc.id, // O ID do documento no Firestore
+      id: doc.id,
       ...doc.data(),
     }));
     locais.value = locaisList;
@@ -68,7 +56,7 @@ async function loadLocaisFromFirestore() {
   } catch (error) {
     console.error("Erro ao carregar locais do Firestore:", error);
     alert("Erro ao carregar dados do Firebase.");
-    locais.value = []; // Garante que esteja vazio em caso de erro
+    locais.value = [];
   }
 }
 
@@ -84,7 +72,6 @@ async function handleImport(event) {
     const text = await file.text();
     const parsed = JSON.parse(text);
 
-    // Validação básica para o formato do JSON de importação
     if (!parsed || !Array.isArray(parsed.locais)) {
       alert(
         "Arquivo JSON inválido ou formato inesperado. Esperado um objeto com array 'locais'.",
@@ -94,25 +81,17 @@ async function handleImport(event) {
 
     const locaisCollection = collection(db, "locais");
 
-    // Limpar o Firestore antes de importar? Isso é opcional e perigoso.
-    // Se você quiser limpar TUDO antes de importar, você precisaria de uma lógica
-    // para buscar todos os documentos e deletá-los um por um.
-    // Por enquanto, vamos apenas adicionar/substituir.
-
     for (const local of parsed.locais) {
-      // Usa o ID existente do JSON como ID do documento no Firestore
-      // Isso vai criar um novo documento se o ID não existir, ou sobrescrever
-      // um documento existente se o ID for o mesmo.
       await setDoc(doc(locaisCollection, local.id), {
         nome: local.nome,
         endereco: local.endereco,
         referencia: local.referencia,
-        createdAt: local.createdAt || new Date().toISOString(), // Mantém o createdAt se existir
+        createdAt: local.createdAt || new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       });
     }
 
-    await loadLocaisFromFirestore(); // Recarrega os dados após a importação
+    await loadLocaisFromFirestore();
     cancelForm();
     alert("Banco importado para o Firebase com sucesso.");
   } catch (error) {
@@ -120,23 +99,21 @@ async function handleImport(event) {
     alert("Erro ao importar o banco para o Firebase.");
   }
 
-  event.target.value = ""; // Limpa o input file
+  event.target.value = "";
 }
 
 function handleExport() {
   try {
     if (!hasDatabase.value) {
-      // Verifica hasDatabase para ver se há dados
       alert("Nenhum banco disponível para exportar.");
       return;
     }
 
-    // Exporta os dados atualmente carregados
     const dataToExport = {
-      version: 1, // Mantém a versão
+      version: 1,
       updatedAt: new Date().toISOString(),
       updatedBy: "Vitor",
-      locais: locais.value, // Usa o array locais.value
+      locais: locais.value,
     };
 
     const json = JSON.stringify(dataToExport, null, 2);
@@ -207,8 +184,8 @@ async function saveForm() {
         nome,
         endereco,
         referencia,
-        createdAt: new Date().toISOString(), // Adiciona um timestamp de criação
-        updatedAt: new Date().toISOString(), // Adiciona um timestamp de atualização
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
       };
       await addDoc(collection(db, "locais"), newLocal);
       alert("Local adicionado com sucesso!");
@@ -222,12 +199,12 @@ async function saveForm() {
         nome,
         endereco,
         referencia,
-        updatedAt: new Date().toISOString(), // Atualiza o timestamp
+        updatedAt: new Date().toISOString(),
       });
       alert("Local atualizado com sucesso!");
     }
 
-    await loadLocaisFromFirestore(); // Recarrega os dados após a modificação
+    await loadLocaisFromFirestore();
     cancelForm();
   } catch (error) {
     console.error("Erro ao salvar local no Firestore:", error);
@@ -246,7 +223,8 @@ async function handleDelete(localId) {
     if (editingId.value === localId) {
       cancelForm();
     }
-    await loadLocaisFromFirestore(); // Recarrega os dados após a exclusão
+
+    await loadLocaisFromFirestore();
   } catch (error) {
     console.error("Erro ao excluir local do Firestore:", error);
     alert("Erro ao excluir dados do Firebase.");
@@ -286,9 +264,7 @@ onMounted(async () => {
           Exportar banco
         </button>
 
-        <button class="action-button" @click="startAdd" :disabled="false">
-          Adicionar local
-        </button>
+        <button class="action-button" @click="startAdd">Adicionar local</button>
 
         <input
           ref="fileInput"
@@ -314,10 +290,8 @@ onMounted(async () => {
     </section>
 
     <template v-else>
-      <section v-if="formMode" class="edit-block">
-        <h2 class="section-title">
-          {{ formMode === "add" ? "Adicionar local" : "Editar local" }}
-        </h2>
+      <section v-if="formMode === 'add'" class="edit-block">
+        <h2 class="section-title">Adicionar local</h2>
 
         <div class="form-grid">
           <input
@@ -362,6 +336,41 @@ onMounted(async () => {
             <span class="result-block">
               Ponto de Referência: {{ local.referencia }}
             </span>
+
+            <div
+              v-if="formMode === 'edit' && editingId === local.id"
+              class="edit-inline-block"
+            >
+              <h2 class="section-title">Editar local</h2>
+
+              <div class="form-grid">
+                <input
+                  v-model="form.nome"
+                  type="text"
+                  class="search-input"
+                  placeholder="Nome"
+                />
+                <input
+                  v-model="form.endereco"
+                  type="text"
+                  class="search-input"
+                  placeholder="Endereço"
+                />
+                <input
+                  v-model="form.referencia"
+                  type="text"
+                  class="search-input"
+                  placeholder="Ponto de referência"
+                />
+              </div>
+
+              <div class="result-actions">
+                <button class="action-button" @click="saveForm">Salvar</button>
+                <button class="action-button" @click="cancelForm">
+                  Cancelar
+                </button>
+              </div>
+            </div>
 
             <div class="result-actions">
               <button class="action-button" @click="handleGoTo(local)">
