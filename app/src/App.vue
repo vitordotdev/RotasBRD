@@ -7,7 +7,8 @@ const locais = ref([
   { id: 1, nome: "Codetran", endereco: "Rua tal", referencia: "A" },
   { id: 2, nome: "Cal - Zelinda", endereco: "Rua tal x", referencia: "B" },
   { id: 3, nome: "Centro Pop", endereco: "Rua tal a", referencia: "C" },
-  { id: 4, nome: "Zen Tower", endereco: "Rua tal B", referencia: "E" },
+  { id: 4, nome: "Zen Tower", endereco: "Rua tal B", referencia: "D" },
+  { id: 5, nome: "Inis - CEA", endereco: "Rua tal C", referencia: "E" },
 ]);
 
 const filteredLocais = computed(() => {
