@@ -1,10 +1,10 @@
 # RotasBRD
 
-Aplicativo para acesso fácil a endereços
+Aplicativo para acesso fácil a endereços<br>
 
 # Recursos
 
-  1 - Cadastro de locais
-  2 - Exclusão de locais
-  3 - IndexedDB + json (banco de dados local)
-  4 - Import/Export fácil do banco de dados
+  1 - Cadastro de locais<br>
+  2 - Exclusão de locais<br>
+  3 - IndexedDB + json (banco de dados local)<br>
+  4 - Import/Export fácil do banco de dados<br>
