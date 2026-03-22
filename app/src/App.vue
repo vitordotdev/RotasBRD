@@ -76,8 +76,10 @@ function handleExport() {
           class="result-item"
         >
           <span class="result-name">{{ local.nome }}</span>
-          <span class="result-address">{{ local.endereco }}</span>
-          <span class="result-block">Referência {{ local.referencia }}</span>
+          <span class="result-address">Endereço: {{ local.endereco }}</span>
+          <span class="result-block"
+            >Ponto de referência: {{ local.referencia }}</span
+          >
         </button>
       </div>
     </section>
