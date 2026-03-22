@@ -1,12 +1,29 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
-import { loadDatabase, saveDatabase } from "./services/db";
+// Importar a instância do Firestore
+import { db } from "./firebase.js"; // Assumindo que seu arquivo firebase.js está em src/firebase.js
+
+// Importar as funções necessárias do Firestore SDK
+import {
+  collection,
+  getDocs,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  setDoc, // Adicionado para a função de importação
+} from "firebase/firestore";
+
+// Removido: import { loadDatabase, saveDatabase } from "./services/db";
 
 const search = ref("");
 const fileInput = ref(null);
 
-const hasDatabase = ref(false);
-const db = ref(null);
+// O array 'locais' agora conterá os dados do Firestore
+const locais = ref([]);
+
+// hasDatabase agora é computado a partir do array 'locais'
+const hasDatabase = computed(() => locais.value.length > 0);
 
 const formMode = ref(null); // null | "add" | "edit"
 const editingId = ref(null);
@@ -17,83 +34,41 @@ const form = ref({
   referencia: "",
 });
 
-function createEmptyDatabase() {
-  return {
-    version: 1,
-    updatedAt: null,
-    updatedBy: "Admin",
-    locais: [],
-  };
-}
+// Removido: createEmptyDatabase() - Firestore não precisa disso diretamente
+// Removido: validateDatabase() - Firestore lida com a estrutura de documentos
+// Removido: touchDatabase() - Metadados de updated/createdAt serão tratados diretamente nas operações
 
 const filteredLocais = computed(() => {
-  if (!db.value || !Array.isArray(db.value.locais)) return [];
+  if (!locais.value || !Array.isArray(locais.value)) return [];
 
   const term = search.value.trim().toLowerCase();
 
-  if (!term) return db.value.locais;
+  if (!term) return locais.value;
 
-  return db.value.locais.filter((local) => {
+  return locais.value.filter((local) => {
     return (
-      local.nome.toLowerCase().startsWith(term) ||
-      local.endereco.toLowerCase().startsWith(term) ||
-      local.referencia.toLowerCase().startsWith(term)
+      local.nome.toLowerCase().includes(term) || // Use includes para busca mais abrangente
+      local.endereco.toLowerCase().includes(term) ||
+      local.referencia.toLowerCase().includes(term)
     );
   });
 });
 
-function validateDatabase(data) {
-  if (!data || typeof data !== "object") return false;
-  if (!Array.isArray(data.locais)) return false;
-
-  for (const local of data.locais) {
-    if (typeof local !== "object") return false;
-    if (typeof local.id !== "string") return false;
-    if (typeof local.nome !== "string") return false;
-    if (typeof local.endereco !== "string") return false;
-    if (typeof local.referencia !== "string") return false;
-  }
-
-  return true;
-}
-
-function touchDatabase() {
-  if (!db.value) return;
-  db.value.updatedAt = new Date().toISOString();
-  db.value.updatedBy = "Vitor";
-}
-
-async function hydrateFromIndexedDB() {
+// Função para carregar os locais do Firestore
+async function loadLocaisFromFirestore() {
   try {
-    const savedDatabase = await loadDatabase();
-
-    if (!savedDatabase || !validateDatabase(savedDatabase)) {
-      hasDatabase.value = false;
-      db.value = createEmptyDatabase();
-      return;
-    }
-
-    db.value = savedDatabase;
-    hasDatabase.value = true;
+    const locaisCollection = collection(db, "locais");
+    const localSnapshot = await getDocs(locaisCollection);
+    const locaisList = localSnapshot.docs.map((doc) => ({
+      id: doc.id, // O ID do documento no Firestore
+      ...doc.data(),
+    }));
+    locais.value = locaisList;
+    console.log("Locais carregados do Firestore com sucesso!");
   } catch (error) {
-    console.error("Erro ao carregar IndexedDB:", error);
-    hasDatabase.value = false;
-    db.value = createEmptyDatabase();
-  }
-}
-
-async function persistDatabase() {
-  try {
-    if (!db.value) return;
-
-    const cleanData = JSON.parse(JSON.stringify(db.value));
-
-    await saveDatabase(cleanData);
-
-    console.log("Banco salvo no IndexedDB com sucesso");
-  } catch (error) {
-    console.error("Erro real ao salvar no IndexedDB:", error);
-    alert("Erro ao salvar dados localmente.");
+    console.error("Erro ao carregar locais do Firestore:", error);
+    alert("Erro ao carregar dados do Firebase.");
+    locais.value = []; // Garante que esteja vazio em caso de erro
   }
 }
 
@@ -109,35 +84,59 @@ async function handleImport(event) {
     const text = await file.text();
     const parsed = JSON.parse(text);
 
-    if (!validateDatabase(parsed)) {
-      alert("Arquivo JSON inválido.");
+    // Validação básica para o formato do JSON de importação
+    if (!parsed || !Array.isArray(parsed.locais)) {
+      alert(
+        "Arquivo JSON inválido ou formato inesperado. Esperado um objeto com array 'locais'.",
+      );
       return;
     }
 
-    await saveDatabase(parsed);
-    await hydrateFromIndexedDB();
+    const locaisCollection = collection(db, "locais");
 
+    // Limpar o Firestore antes de importar? Isso é opcional e perigoso.
+    // Se você quiser limpar TUDO antes de importar, você precisaria de uma lógica
+    // para buscar todos os documentos e deletá-los um por um.
+    // Por enquanto, vamos apenas adicionar/substituir.
+
+    for (const local of parsed.locais) {
+      // Usa o ID existente do JSON como ID do documento no Firestore
+      // Isso vai criar um novo documento se o ID não existir, ou sobrescrever
+      // um documento existente se o ID for o mesmo.
+      await setDoc(doc(locaisCollection, local.id), {
+        nome: local.nome,
+        endereco: local.endereco,
+        referencia: local.referencia,
+        createdAt: local.createdAt || new Date().toISOString(), // Mantém o createdAt se existir
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    await loadLocaisFromFirestore(); // Recarrega os dados após a importação
     cancelForm();
-    alert("Banco importado com sucesso.");
+    alert("Banco importado para o Firebase com sucesso.");
   } catch (error) {
     console.error(error);
-    alert("Erro ao importar o banco.");
+    alert("Erro ao importar o banco para o Firebase.");
   }
 
-  event.target.value = "";
+  event.target.value = ""; // Limpa o input file
 }
 
 function handleExport() {
   try {
-    if (!db.value) {
+    if (!hasDatabase.value) {
+      // Verifica hasDatabase para ver se há dados
       alert("Nenhum banco disponível para exportar.");
       return;
     }
 
+    // Exporta os dados atualmente carregados
     const dataToExport = {
-      ...db.value,
+      version: 1, // Mantém a versão
       updatedAt: new Date().toISOString(),
       updatedBy: "Vitor",
+      locais: locais.value, // Usa o array locais.value
     };
 
     const json = JSON.stringify(dataToExport, null, 2);
@@ -193,8 +192,6 @@ function cancelForm() {
 }
 
 async function saveForm() {
-  if (!db.value) return;
-
   const nome = form.value.nome.trim();
   const endereco = form.value.endereco.trim();
   const referencia = form.value.referencia.trim();
@@ -204,47 +201,60 @@ async function saveForm() {
     return;
   }
 
-  if (formMode.value === "add") {
-    db.value.locais.push({
-      id: crypto.randomUUID(),
-      nome,
-      endereco,
-      referencia,
-    });
+  try {
+    if (formMode.value === "add") {
+      const newLocal = {
+        nome,
+        endereco,
+        referencia,
+        createdAt: new Date().toISOString(), // Adiciona um timestamp de criação
+        updatedAt: new Date().toISOString(), // Adiciona um timestamp de atualização
+      };
+      await addDoc(collection(db, "locais"), newLocal);
+      alert("Local adicionado com sucesso!");
+    }
+
+    if (formMode.value === "edit") {
+      if (!editingId.value) return;
+
+      const localRef = doc(db, "locais", editingId.value);
+      await updateDoc(localRef, {
+        nome,
+        endereco,
+        referencia,
+        updatedAt: new Date().toISOString(), // Atualiza o timestamp
+      });
+      alert("Local atualizado com sucesso!");
+    }
+
+    await loadLocaisFromFirestore(); // Recarrega os dados após a modificação
+    cancelForm();
+  } catch (error) {
+    console.error("Erro ao salvar local no Firestore:", error);
+    alert("Erro ao salvar dados no Firebase.");
   }
-
-  if (formMode.value === "edit") {
-    const local = db.value.locais.find((item) => item.id === editingId.value);
-    if (!local) return;
-
-    local.nome = nome;
-    local.endereco = endereco;
-    local.referencia = referencia;
-  }
-
-  touchDatabase();
-  await persistDatabase();
-  cancelForm();
 }
 
 async function handleDelete(localId) {
-  if (!db.value) return;
-
   const confirmed = confirm("Deseja realmente excluir este local?");
   if (!confirmed) return;
 
-  db.value.locais = db.value.locais.filter((local) => local.id !== localId);
+  try {
+    await deleteDoc(doc(db, "locais", localId));
+    alert("Local excluído com sucesso!");
 
-  if (editingId.value === localId) {
-    cancelForm();
+    if (editingId.value === localId) {
+      cancelForm();
+    }
+    await loadLocaisFromFirestore(); // Recarrega os dados após a exclusão
+  } catch (error) {
+    console.error("Erro ao excluir local do Firestore:", error);
+    alert("Erro ao excluir dados do Firebase.");
   }
-
-  touchDatabase();
-  await persistDatabase();
 }
 
 onMounted(async () => {
-  await hydrateFromIndexedDB();
+  await loadLocaisFromFirestore();
 });
 </script>
 
@@ -279,7 +289,7 @@ onMounted(async () => {
         <button
           class="action-button"
           @click="startAdd"
-          :disabled="!hasDatabase"
+          :disabled="false" <!-- Permitir adicionar mesmo sem dados no Firestore -->
         >
           Adicionar local
         </button>
@@ -295,12 +305,13 @@ onMounted(async () => {
     </section>
 
     <section v-if="!hasDatabase" class="empty-db-block">
-      <h2 class="section-title">Nenhum banco encontrado</h2>
+      <h2 class="section-title">Nenhum local encontrado no Firebase</h2>
       <p class="empty-state">
-        Importe um arquivo JSON para começar a usar o Rotas BRD.
+        Adicione um novo local ou importe um arquivo JSON para o Firebase.
       </p>
+      <button class="action-button" @click="startAdd">Adicionar Primeiro Local</button>
       <button class="action-button" @click="triggerImport">
-        Importar banco
+        Importar banco JSON
       </button>
     </section>
 
@@ -339,7 +350,7 @@ onMounted(async () => {
 
       <section class="results-block">
         <div v-if="filteredLocais.length === 0" class="empty-state">
-          Nenhum endereço encontrado.
+          Nenhum endereço encontrado para sua busca.
         </div>
 
         <div v-else class="results-list">
