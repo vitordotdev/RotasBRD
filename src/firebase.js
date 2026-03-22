@@ -1,12 +1,14 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
 import { getAnalytics, isSupported } from "firebase/analytics";
-import { getFirestore } from "firebase/firestore"; // Para o Cloud Firestore
-// TODO: Add SDKs for Firebase products that you want to use
-// https://firebase.google.com/docs/web/setup#available-libraries
+import { getFirestore } from "firebase/firestore";
+import {
+  getAuth,
+  setPersistence,
+  browserLocalPersistence,
+} from "firebase/auth";
 
 // Your web app's Firebase configuration
-// For Firebase JS SDK v7.20.0 and later, measurementId is optional
 const firebaseConfig = {
   apiKey: "AIzaSyBCtrnFWI1zRnZqu3Xq-orECkoeuOFDtlU",
   authDomain: "rbrd-db.firebaseapp.com",
@@ -19,6 +21,11 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const db = getFirestore(app);
+const auth = getAuth(app);
+
+setPersistence(auth, browserLocalPersistence).catch((err) => {
+  console.warn("Erro ao configurar persistência de login:", err);
+});
 
 let analytics = null;
 
@@ -32,4 +39,4 @@ isSupported()
     console.warn("Analytics não suportado neste ambiente:", err);
   });
 
-export { db, analytics };
+export { db, auth, analytics };

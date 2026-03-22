@@ -1,6 +1,6 @@
 <script setup>
 import { computed, onMounted, ref } from "vue";
-import { db } from "./firebase.js";
+import { db, auth } from "./firebase.js";
 
 import {
   collection,
@@ -12,11 +12,23 @@ import {
   setDoc,
 } from "firebase/firestore";
 
+import {
+  signInWithEmailAndPassword,
+  signOut,
+  onAuthStateChanged,
+} from "firebase/auth";
+
 const search = ref("");
 const fileInput = ref(null);
 const locais = ref([]);
 
+const authEmail = ref("");
+const authPassword = ref("");
+const currentUser = ref(null);
+const authReady = ref(false);
+
 const hasDatabase = computed(() => locais.value.length > 0);
+const isAuthenticated = computed(() => !!currentUser.value);
 
 const formMode = ref(null); // null | "add" | "edit"
 const editingId = ref(null);
@@ -43,13 +55,22 @@ const filteredLocais = computed(() => {
   });
 });
 
+function requireAuth() {
+  if (isAuthenticated.value) return true;
+
+  alert(
+    "Erro de autenticação. Faça login para adicionar, editar, excluir ou importar dados.",
+  );
+  return false;
+}
+
 async function loadLocaisFromFirestore() {
   try {
     const locaisCollection = collection(db, "locais");
     const localSnapshot = await getDocs(locaisCollection);
-    const locaisList = localSnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
+    const locaisList = localSnapshot.docs.map((item) => ({
+      id: item.id,
+      ...item.data(),
     }));
     locais.value = locaisList;
     console.log("Locais carregados do Firestore com sucesso!");
@@ -61,10 +82,16 @@ async function loadLocaisFromFirestore() {
 }
 
 function triggerImport() {
+  if (!requireAuth()) return;
   fileInput.value?.click();
 }
 
 async function handleImport(event) {
+  if (!requireAuth()) {
+    event.target.value = "";
+    return;
+  }
+
   const file = event.target.files?.[0];
   if (!file) return;
 
@@ -112,7 +139,7 @@ function handleExport() {
     const dataToExport = {
       version: 1,
       updatedAt: new Date().toISOString(),
-      updatedBy: "Vitor",
+      updatedBy: currentUser.value?.email || "Vitor",
       locais: locais.value,
     };
 
@@ -139,6 +166,8 @@ function handleGoTo(local) {
 }
 
 function startAdd() {
+  if (!requireAuth()) return;
+
   formMode.value = "add";
   editingId.value = null;
   form.value = {
@@ -149,6 +178,8 @@ function startAdd() {
 }
 
 function startEdit(local) {
+  if (!requireAuth()) return;
+
   formMode.value = "edit";
   editingId.value = local.id;
   form.value = {
@@ -169,6 +200,8 @@ function cancelForm() {
 }
 
 async function saveForm() {
+  if (!requireAuth()) return;
+
   const nome = form.value.nome.trim();
   const endereco = form.value.endereco.trim();
   const referencia = form.value.referencia.trim();
@@ -187,6 +220,7 @@ async function saveForm() {
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       };
+
       await addDoc(collection(db, "locais"), newLocal);
       alert("Local adicionado com sucesso!");
     }
@@ -201,6 +235,7 @@ async function saveForm() {
         referencia,
         updatedAt: new Date().toISOString(),
       });
+
       alert("Local atualizado com sucesso!");
     }
 
@@ -213,6 +248,8 @@ async function saveForm() {
 }
 
 async function handleDelete(localId) {
+  if (!requireAuth()) return;
+
   const confirmed = confirm("Deseja realmente excluir este local?");
   if (!confirmed) return;
 
@@ -231,7 +268,42 @@ async function handleDelete(localId) {
   }
 }
 
+async function handleLogin() {
+  const email = authEmail.value.trim();
+  const password = authPassword.value;
+
+  if (!email || !password) {
+    alert("Preencha email e senha.");
+    return;
+  }
+
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+    authPassword.value = "";
+    alert("Login realizado com sucesso!");
+  } catch (error) {
+    console.error("Erro no login:", error);
+    alert("Email ou senha inválidos.");
+  }
+}
+
+async function handleLogout() {
+  try {
+    await signOut(auth);
+    cancelForm();
+    alert("Logout realizado com sucesso!");
+  } catch (error) {
+    console.error("Erro ao sair:", error);
+    alert("Erro ao fazer logout.");
+  }
+}
+
 onMounted(async () => {
+  onAuthStateChanged(auth, (user) => {
+    currentUser.value = user;
+    authReady.value = true;
+  });
+
   await loadLocaisFromFirestore();
 });
 </script>
@@ -239,6 +311,45 @@ onMounted(async () => {
 <template>
   <main class="app-container">
     <h1 class="app-title">Rotas BRD</h1>
+
+    <section class="login-block">
+      <div class="login-header">
+        <h2 class="section-title">Acesso administrativo</h2>
+
+        <span v-if="!authReady" class="auth-status">Verificando sessão...</span>
+
+        <span v-else-if="isAuthenticated" class="auth-status success">
+          Logado como: {{ currentUser.email }}
+        </span>
+
+        <span v-else class="auth-status"> Não autenticado </span>
+      </div>
+
+      <div v-if="!isAuthenticated" class="login-grid">
+        <input
+          v-model="authEmail"
+          type="email"
+          class="search-input"
+          placeholder="Email"
+          autocomplete="username"
+        />
+
+        <input
+          v-model="authPassword"
+          type="password"
+          class="search-input"
+          placeholder="Senha"
+          autocomplete="current-password"
+          @keyup.enter="handleLogin"
+        />
+
+        <button class="action-button" @click="handleLogin">Entrar</button>
+      </div>
+
+      <div v-else class="result-actions">
+        <button class="action-button" @click="handleLogout">Sair</button>
+      </div>
+    </section>
 
     <section class="top-bar">
       <div class="search-block">
@@ -281,9 +392,11 @@ onMounted(async () => {
       <p class="empty-state">
         Adicione um novo local ou importe um arquivo JSON para o Firebase.
       </p>
+
       <button class="action-button" @click="startAdd">
         Adicionar Primeiro Local
       </button>
+
       <button class="action-button" @click="triggerImport">
         Importar banco JSON
       </button>
@@ -376,9 +489,11 @@ onMounted(async () => {
               <button class="action-button" @click="handleGoTo(local)">
                 Rotas
               </button>
+
               <button class="action-button" @click="startEdit(local)">
                 Editar
               </button>
+
               <button
                 class="action-button delete-button"
                 @click="handleDelete(local.id)"
