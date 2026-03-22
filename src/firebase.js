@@ -1,6 +1,6 @@
 // Import the functions you need from the SDKs you need
 import { initializeApp } from "firebase/app";
-import { getAnalytics } from "firebase/analytics";
+import { getAnalytics, isSupported } from "firebase/analytics";
 import { getFirestore } from "firebase/firestore"; // Para o Cloud Firestore
 // TODO: Add SDKs for Firebase products that you want to use
 // https://firebase.google.com/docs/web/setup#available-libraries
@@ -17,9 +17,19 @@ const firebaseConfig = {
   measurementId: "G-BMSSL0YVFB",
 };
 
-// Initialize Firebase
 const app = initializeApp(firebaseConfig);
-// Obtenha uma instância do Cloud Firestore
 const db = getFirestore(app);
-const analytics = getAnalytics(app);
-export { db };
+
+let analytics = null;
+
+isSupported()
+  .then((ok) => {
+    if (ok) {
+      analytics = getAnalytics(app);
+    }
+  })
+  .catch((err) => {
+    console.warn("Analytics não suportado neste ambiente:", err);
+  });
+
+export { db, analytics };

@@ -286,11 +286,7 @@ onMounted(async () => {
           Exportar banco
         </button>
 
-        <button
-          class="action-button"
-          @click="startAdd"
-          :disabled="false" <!-- Permitir adicionar mesmo sem dados no Firestore -->
-        >
+        <button class="action-button" @click="startAdd" :disabled="false">
           Adicionar local
         </button>
 
@@ -309,7 +305,9 @@ onMounted(async () => {
       <p class="empty-state">
         Adicione um novo local ou importe um arquivo JSON para o Firebase.
       </p>
-      <button class="action-button" @click="startAdd">Adicionar Primeiro Local</button>
+      <button class="action-button" @click="startAdd">
+        Adicionar Primeiro Local
+      </button>
       <button class="action-button" @click="triggerImport">
         Importar banco JSON
       </button>
