@@ -10,13 +10,13 @@ import {
 
 // Your web app's Firebase configuration
 const firebaseConfig = {
-  apiKey: "AIzaSyBCtrnFWI1zRnZqu3Xq-orECkoeuOFDtlU",
-  authDomain: "rbrd-db.firebaseapp.com",
-  projectId: "rbrd-db",
-  storageBucket: "rbrd-db.firebasestorage.app",
-  messagingSenderId: "714490432536",
-  appId: "1:714490432536:web:f4f326631bb225b382876d",
-  measurementId: "G-BMSSL0YVFB",
+  apiKey: "",
+  authDomain: "",
+  projectId: "",
+  storageBucket: "",
+  messagingSenderId: "",
+  appId: "",
+  measurementId: "",
 };
 
 const app = initializeApp(firebaseConfig);
