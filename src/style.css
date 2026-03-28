@@ -160,7 +160,7 @@ input {
 
 .voice-button.listening {
   border-color: #3b82f6;
-  background: #1b2a44;
+  background: #10192b;
 }
 
 .voice-ping {
@@ -366,7 +366,11 @@ input {
   }
 
   .voice-button {
-    width: 100%;
+    min-width: 130px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
   }
 
   .modal-overlay {

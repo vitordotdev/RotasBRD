@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, onBeforeUnmount, ref } from "vue";
+import { computed, onMounted, onBeforeUnmount, ref, nextTick } from "vue";
 import { db, auth } from "./firebase.js";
 
 import {
@@ -19,6 +19,7 @@ import {
 } from "firebase/auth";
 
 const search = ref("");
+const searchInputRef = ref(null);
 const fileInput = ref(null);
 const locais = ref([]);
 
@@ -36,6 +37,7 @@ const isLoggingOut = ref(false);
 
 const isListening = ref(false);
 const speechSupported = ref(false);
+
 let recognition = null;
 
 const form = ref({
@@ -55,10 +57,14 @@ const filteredLocais = computed(() => {
   if (!term) return locais.value;
 
   return locais.value.filter((local) => {
+    const nome = String(local.nome || "").toLowerCase();
+    const endereco = String(local.endereco || "").toLowerCase();
+    const referencia = String(local.referencia || "").toLowerCase();
+
     return (
-      local.nome.toLowerCase().includes(term) ||
-      local.endereco.toLowerCase().includes(term) ||
-      local.referencia.toLowerCase().includes(term)
+      nome.includes(term) ||
+      endereco.includes(term) ||
+      referencia.includes(term)
     );
   });
 });
@@ -80,21 +86,32 @@ function requireAuth() {
   return false;
 }
 
+function focusSearchInput() {
+  nextTick(() => {
+    searchInputRef.value?.focus();
+  });
+}
+
 function setupSpeechRecognition() {
-  const SpeechRecognition =
+  if (typeof window === "undefined") {
+    speechSupported.value = false;
+    return;
+  }
+
+  const SpeechRecognitionClass =
     window.SpeechRecognition || window.webkitSpeechRecognition;
 
-  if (!SpeechRecognition) {
+  if (!SpeechRecognitionClass) {
     speechSupported.value = false;
     return;
   }
 
   speechSupported.value = true;
-  recognition = new SpeechRecognition();
+  recognition = new SpeechRecognitionClass();
 
   recognition.lang = "pt-BR";
   recognition.continuous = false;
-  recognition.interimResults = true;
+  recognition.interimResults = false;
   recognition.maxAlternatives = 1;
 
   recognition.onstart = () => {
@@ -102,19 +119,41 @@ function setupSpeechRecognition() {
   };
 
   recognition.onresult = (event) => {
-    let transcript = "";
+    try {
+      const lastResultIndex = event.results.length - 1;
+      const result = event.results[lastResultIndex];
 
-    for (let i = event.resultIndex; i < event.results.length; i += 1) {
-      transcript += event.results[i][0].transcript;
+      if (!result || !result[0]) return;
+
+      const transcript = result[0].transcript?.trim() || "";
+
+      if (transcript) {
+        search.value = transcript;
+        focusSearchInput();
+      }
+    } catch (error) {
+      console.error("Erro ao processar resultado de voz:", error);
     }
+  };
 
-    search.value = transcript.trim();
+  recognition.onerror = (event) => {
+    console.error("Erro no reconhecimento de voz:", event);
+    isListening.value = false;
+
+    if (event?.error !== "aborted" && event?.error !== "no-speech") {
+      alert("Não foi possível usar a pesquisa por voz.");
+    }
+  };
+
+  recognition.onend = () => {
+    isListening.value = false;
+    focusSearchInput();
   };
 
   recognition.onerror = (event) => {
     console.error("Erro no reconhecimento de voz:", event);
 
-    if (event.error !== "aborted") {
+    if (event?.error !== "aborted" && event?.error !== "no-speech") {
       alert("Não foi possível usar a pesquisa por voz.");
     }
 
@@ -123,6 +162,7 @@ function setupSpeechRecognition() {
 
   recognition.onend = () => {
     isListening.value = false;
+    focusSearchInput();
   };
 }
 
@@ -138,16 +178,22 @@ function toggleVoiceSearch() {
   }
 
   if (isListening.value) {
-    recognition.stop();
+    try {
+      recognition.stop();
+    } catch (error) {
+      console.error("Erro ao parar reconhecimento de voz:", error);
+    }
+    isListening.value = false;
     return;
   }
 
   try {
+    isListening.value = true;
     recognition.start();
   } catch (error) {
     console.error("Erro ao iniciar reconhecimento de voz:", error);
-    alert("Não foi possível iniciar a pesquisa por voz.");
     isListening.value = false;
+    alert("Não foi possível iniciar a pesquisa por voz.");
   }
 }
 
@@ -419,7 +465,12 @@ onBeforeUnmount(() => {
     recognition.onresult = null;
     recognition.onerror = null;
     recognition.onend = null;
-    recognition.stop();
+
+    try {
+      recognition.stop();
+    } catch {
+      // ignora
+    }
   }
 });
 </script>
@@ -522,6 +573,7 @@ onBeforeUnmount(() => {
       <div class="search-block">
         <div class="search-row">
           <input
+            ref="searchInputRef"
             v-model="search"
             type="text"
             class="search-input"
