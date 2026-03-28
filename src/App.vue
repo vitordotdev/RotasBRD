@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onBeforeUnmount, ref } from "vue";
 import { db, auth } from "./firebase.js";
 
 import {
@@ -27,17 +27,25 @@ const authPassword = ref("");
 const currentUser = ref(null);
 const authReady = ref(false);
 
-const hasDatabase = computed(() => locais.value.length > 0);
-const isAuthenticated = computed(() => !!currentUser.value);
-
 const formMode = ref(null); // null | "add" | "edit"
 const editingId = ref(null);
+
+const adminModalOpen = ref(false);
+const isLoggingIn = ref(false);
+const isLoggingOut = ref(false);
+
+const isListening = ref(false);
+const speechSupported = ref(false);
+let recognition = null;
 
 const form = ref({
   nome: "",
   endereco: "",
   referencia: "",
 });
+
+const hasDatabase = computed(() => locais.value.length > 0);
+const isAuthenticated = computed(() => !!currentUser.value);
 
 const filteredLocais = computed(() => {
   if (!locais.value || !Array.isArray(locais.value)) return [];
@@ -55,6 +63,14 @@ const filteredLocais = computed(() => {
   });
 });
 
+function openAdminModal() {
+  adminModalOpen.value = true;
+}
+
+function closeAdminModal() {
+  adminModalOpen.value = false;
+}
+
 function requireAuth() {
   if (isAuthenticated.value) return true;
 
@@ -62,6 +78,77 @@ function requireAuth() {
     "Erro de autenticação. Faça login para adicionar, editar, excluir ou importar dados.",
   );
   return false;
+}
+
+function setupSpeechRecognition() {
+  const SpeechRecognition =
+    window.SpeechRecognition || window.webkitSpeechRecognition;
+
+  if (!SpeechRecognition) {
+    speechSupported.value = false;
+    return;
+  }
+
+  speechSupported.value = true;
+  recognition = new SpeechRecognition();
+
+  recognition.lang = "pt-BR";
+  recognition.continuous = false;
+  recognition.interimResults = true;
+  recognition.maxAlternatives = 1;
+
+  recognition.onstart = () => {
+    isListening.value = true;
+  };
+
+  recognition.onresult = (event) => {
+    let transcript = "";
+
+    for (let i = event.resultIndex; i < event.results.length; i += 1) {
+      transcript += event.results[i][0].transcript;
+    }
+
+    search.value = transcript.trim();
+  };
+
+  recognition.onerror = (event) => {
+    console.error("Erro no reconhecimento de voz:", event);
+
+    if (event.error !== "aborted") {
+      alert("Não foi possível usar a pesquisa por voz.");
+    }
+
+    isListening.value = false;
+  };
+
+  recognition.onend = () => {
+    isListening.value = false;
+  };
+}
+
+function toggleVoiceSearch() {
+  if (!speechSupported.value || !recognition) {
+    alert("Seu navegador não suporta pesquisa por voz.");
+    return;
+  }
+
+  if (!hasDatabase.value) {
+    alert("Nenhum banco disponível para pesquisar.");
+    return;
+  }
+
+  if (isListening.value) {
+    recognition.stop();
+    return;
+  }
+
+  try {
+    recognition.start();
+  } catch (error) {
+    console.error("Erro ao iniciar reconhecimento de voz:", error);
+    alert("Não foi possível iniciar a pesquisa por voz.");
+    isListening.value = false;
+  }
 }
 
 async function loadLocaisFromFirestore() {
@@ -120,6 +207,7 @@ async function handleImport(event) {
 
     await loadLocaisFromFirestore();
     cancelForm();
+    closeAdminModal();
     alert("Banco importado para o Firebase com sucesso.");
   } catch (error) {
     console.error(error);
@@ -175,6 +263,8 @@ function startAdd() {
     endereco: "",
     referencia: "",
   };
+
+  closeAdminModal();
 }
 
 function startEdit(local) {
@@ -277,28 +367,44 @@ async function handleLogin() {
     return;
   }
 
+  if (isLoggingIn.value) return;
+
+  isLoggingIn.value = true;
+
   try {
     await signInWithEmailAndPassword(auth, email, password);
     authPassword.value = "";
+    closeAdminModal();
     alert("Login realizado com sucesso!");
   } catch (error) {
     console.error("Erro no login:", error);
     alert("Email ou senha inválidos.");
+  } finally {
+    isLoggingIn.value = false;
   }
 }
 
 async function handleLogout() {
+  if (isLoggingOut.value) return;
+
+  isLoggingOut.value = true;
+
   try {
     await signOut(auth);
     cancelForm();
+    closeAdminModal();
     alert("Logout realizado com sucesso!");
   } catch (error) {
     console.error("Erro ao sair:", error);
     alert("Erro ao fazer logout.");
+  } finally {
+    isLoggingOut.value = false;
   }
 }
 
 onMounted(async () => {
+  setupSpeechRecognition();
+
   onAuthStateChanged(auth, (user) => {
     currentUser.value = user;
     authReady.value = true;
@@ -306,85 +412,147 @@ onMounted(async () => {
 
   await loadLocaisFromFirestore();
 });
+
+onBeforeUnmount(() => {
+  if (recognition) {
+    recognition.onstart = null;
+    recognition.onresult = null;
+    recognition.onerror = null;
+    recognition.onend = null;
+    recognition.stop();
+  }
+});
 </script>
 
 <template>
   <main class="app-container">
+    <div class="app-topbar">
+      <button class="action-button admin-toggle-button" @click="openAdminModal">
+        ⚙ Painel
+      </button>
+    </div>
+
     <h1 class="app-title">Rotas BRD</h1>
 
-    <section class="login-block">
-      <div class="login-header">
-        <h2 class="section-title">Acesso administrativo</h2>
+    <div v-if="adminModalOpen" class="modal-overlay" @click="closeAdminModal">
+      <div class="admin-modal" @click.stop>
+        <div class="admin-modal-header">
+          <h2 class="section-title">Painel administrativo</h2>
+          <button class="modal-close-button" @click="closeAdminModal">×</button>
+        </div>
 
-        <span v-if="!authReady" class="auth-status">Verificando sessão...</span>
+        <div class="admin-modal-body">
+          <div class="login-block modal-section">
+            <div class="login-header">
+              <span v-if="!authReady" class="auth-status">
+                Verificando sessão...
+              </span>
 
-        <span v-else-if="isAuthenticated" class="auth-status success">
-          Logado como: {{ currentUser.email }}
-        </span>
+              <span v-else-if="isAuthenticated" class="auth-status success">
+                Logado como: {{ currentUser.email }}
+              </span>
 
-        <span v-else class="auth-status"> Não autenticado </span>
+              <span v-else class="auth-status">Não autenticado</span>
+            </div>
+
+            <div v-if="!isAuthenticated" class="login-grid modal-login-grid">
+              <input
+                v-model="authEmail"
+                type="email"
+                class="search-input"
+                placeholder="Email"
+                autocomplete="username"
+              />
+
+              <input
+                v-model="authPassword"
+                type="password"
+                class="search-input"
+                placeholder="Senha"
+                autocomplete="current-password"
+                @keyup.enter="handleLogin"
+              />
+
+              <button
+                class="action-button loading-button"
+                :class="{ loading: isLoggingIn }"
+                :disabled="isLoggingIn"
+                @click="handleLogin"
+              >
+                <span v-if="isLoggingIn" class="button-loader"></span>
+                {{ isLoggingIn ? "Entrando..." : "Entrar" }}
+              </button>
+            </div>
+
+            <div v-else class="result-actions">
+              <button
+                class="action-button loading-button"
+                :class="{ loading: isLoggingOut }"
+                :disabled="isLoggingOut"
+                @click="handleLogout"
+              >
+                <span v-if="isLoggingOut" class="button-loader"></span>
+                {{ isLoggingOut ? "Saindo..." : "Sair" }}
+              </button>
+            </div>
+          </div>
+
+          <div class="actions-block modal-actions">
+            <button class="action-button" @click="triggerImport">
+              Importar banco
+            </button>
+
+            <button
+              class="action-button"
+              @click="handleExport"
+              :disabled="!hasDatabase"
+            >
+              Exportar banco
+            </button>
+
+            <button class="action-button" @click="startAdd">
+              Adicionar local
+            </button>
+          </div>
+        </div>
       </div>
+    </div>
 
-      <div v-if="!isAuthenticated" class="login-grid">
-        <input
-          v-model="authEmail"
-          type="email"
-          class="search-input"
-          placeholder="Email"
-          autocomplete="username"
-        />
-
-        <input
-          v-model="authPassword"
-          type="password"
-          class="search-input"
-          placeholder="Senha"
-          autocomplete="current-password"
-          @keyup.enter="handleLogin"
-        />
-
-        <button class="action-button" @click="handleLogin">Entrar</button>
-      </div>
-
-      <div v-else class="result-actions">
-        <button class="action-button" @click="handleLogout">Sair</button>
-      </div>
-    </section>
-
-    <section class="top-bar">
+    <section class="top-bar single-column">
       <div class="search-block">
-        <input
-          v-model="search"
-          type="text"
-          class="search-input"
-          placeholder="Digite para buscar endereços..."
-          :disabled="!hasDatabase"
-        />
+        <div class="search-row">
+          <input
+            v-model="search"
+            type="text"
+            class="search-input"
+            placeholder="Digite ou fale para buscar endereços..."
+            :disabled="!hasDatabase"
+          />
+
+          <button
+            class="action-button voice-button"
+            :class="{ listening: isListening }"
+            :disabled="!hasDatabase || !speechSupported"
+            @click="toggleVoiceSearch"
+            :title="
+              speechSupported
+                ? 'Pesquisar por voz'
+                : 'Pesquisa por voz não suportada'
+            "
+          >
+            <span v-if="isListening" class="voice-ping"></span>
+            {{ isListening ? "Ouvindo..." : "🎤 Voz" }}
+          </button>
+        </div>
       </div>
 
-      <div class="actions-block">
-        <button class="action-button" @click="triggerImport">
-          Importar banco
-        </button>
-
-        <button
-          class="action-button"
-          @click="handleExport"
-          :disabled="!hasDatabase"
-        >
-          Exportar banco
-        </button>
-
-        <button class="action-button" @click="startAdd">Adicionar local</button>
-
-        <input
-          ref="fileInput"
-          type="file"
-          accept=".json,application/json"
-          style="display: none"
-          @change="handleImport"
-        />
-      </div>
+      <input
+        ref="fileInput"
+        type="file"
+        accept=".json,application/json"
+        style="display: none"
+        @change="handleImport"
+      />
     </section>
 
     <section v-if="!hasDatabase" class="empty-db-block">
@@ -393,12 +561,8 @@ onMounted(async () => {
         Adicione um novo local ou importe um arquivo JSON para o Firebase.
       </p>
 
-      <button class="action-button" @click="startAdd">
-        Adicionar Primeiro Local
-      </button>
-
-      <button class="action-button" @click="triggerImport">
-        Importar banco JSON
+      <button class="action-button" @click="openAdminModal">
+        Abrir painel administrativo
       </button>
     </section>
 
