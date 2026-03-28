@@ -39,6 +39,7 @@ const isListening = ref(false);
 const speechSupported = ref(false);
 
 let recognition = null;
+let finalTranscript = "";
 
 const form = ref({
   nome: "",
@@ -111,26 +112,31 @@ function setupSpeechRecognition() {
 
   recognition.lang = "pt-BR";
   recognition.continuous = false;
-  recognition.interimResults = false;
+  recognition.interimResults = true;
   recognition.maxAlternatives = 1;
 
   recognition.onstart = () => {
     isListening.value = true;
+    finalTranscript = "";
   };
 
   recognition.onresult = (event) => {
     try {
-      const lastResultIndex = event.results.length - 1;
-      const result = event.results[lastResultIndex];
+      let interimTranscript = "";
 
-      if (!result || !result[0]) return;
+      for (let i = event.resultIndex; i < event.results.length; i += 1) {
+        const result = event.results[i];
+        const transcript = result?.[0]?.transcript || "";
 
-      const transcript = result[0].transcript?.trim() || "";
-
-      if (transcript) {
-        search.value = transcript;
-        focusSearchInput();
+        if (result.isFinal) {
+          finalTranscript += `${transcript} `;
+        } else {
+          interimTranscript += transcript;
+        }
       }
+
+      search.value = `${finalTranscript}${interimTranscript}`.trim();
+      focusSearchInput();
     } catch (error) {
       console.error("Erro ao processar resultado de voz:", error);
     }
@@ -147,21 +153,7 @@ function setupSpeechRecognition() {
 
   recognition.onend = () => {
     isListening.value = false;
-    focusSearchInput();
-  };
-
-  recognition.onerror = (event) => {
-    console.error("Erro no reconhecimento de voz:", event);
-
-    if (event?.error !== "aborted" && event?.error !== "no-speech") {
-      alert("Não foi possível usar a pesquisa por voz.");
-    }
-
-    isListening.value = false;
-  };
-
-  recognition.onend = () => {
-    isListening.value = false;
+    finalTranscript = "";
     focusSearchInput();
   };
 }
@@ -189,6 +181,7 @@ function toggleVoiceSearch() {
 
   try {
     isListening.value = true;
+    finalTranscript = "";
     recognition.start();
   } catch (error) {
     console.error("Erro ao iniciar reconhecimento de voz:", error);
